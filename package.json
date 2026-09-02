@@ -1,0 +1,18 @@
+{
+  "name": "todo",
+  "version": "0.1.0",
+  "description": "Month calendar with a per-day todo list and day alerts",
+  "main": "main.js",
+  "scripts": {
+    "build": "node build.js",
+    "start": "node build.js && electron .",
+    "app": "node scripts/make-app.js",
+    "postinstall": "node scripts/ensure-electron.js && node scripts/ensure-signature.js"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}

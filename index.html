@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; font-src 'self'">
+  <title>Todo</title>
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <header id="titlebar">
+    <span id="apptitle">todo</span>
+    <span id="headline"></span>
+    <span class="grow"></span>
+    <button id="today" class="ghost" title="Jump back to today (⌘T)">today</button>
+  </header>
+
+  <main id="main">
+    <!-- Left: the month. Right: the selected day. Both are always on screen —
+         picking a day should never cost you sight of the month around it. -->
+    <section id="monthpane" aria-label="Month">
+      <nav id="monthbar">
+        <button id="prev" title="Previous month (⌘[)">←</button>
+        <h1 id="monthname"></h1>
+        <button id="next" title="Next month (⌘])">→</button>
+      </nav>
+      <!-- Categories live above the month because they filter it: picking one
+           narrows every cell and the day list at once. -->
+      <div id="chips" role="group" aria-label="Categories"></div>
+      <div id="weekdays" aria-hidden="true"></div>
+      <div id="cal" role="grid" tabindex="0" aria-label="Days of the month"></div>
+    </section>
+
+    <section id="daypane" aria-label="Selected day">
+      <header id="dayhead">
+        <h2 id="dayname"></h2>
+        <span id="daycount"></span>
+        <span class="grow"></span>
+        <button id="clear" class="ghost" title="Delete the finished items">clear done</button>
+      </header>
+
+      <!-- Alerts sit above the list and outside it: they mark the day without
+           taking a line in it. -->
+      <div id="alerts" aria-label="Alerts on this day"></div>
+
+      <div id="list" tabindex="0" aria-label="Items on this day"></div>
+
+      <!-- Two rows on purpose: what you are adding on top, what it says below.
+           One row would leave the text field too narrow to read. -->
+      <footer id="compose">
+        <div id="composetop">
+          <div id="kind" role="group" aria-label="What to add">
+            <button type="button" data-kind="items" class="on">item</button>
+            <button type="button" data-kind="alerts">alert</button>
+          </div>
+          <button id="catpick" class="catbtn" title="File the new item under a category"></button>
+        </div>
+        <input id="entry" type="text" maxlength="200" spellcheck="false" placeholder="add an item…">
+        <button id="add" class="primary">add</button>
+      </footer>
+    </section>
+  </main>
+
+  <footer id="statusbar">
+    <span id="selinfo"></span>
+    <span class="grow"></span>
+    <span id="hints">calendar: <b>←→↑↓</b> day &nbsp; <b>⇞⇟</b> month &nbsp; <b>⏎</b> compose &nbsp;&nbsp; list: <b>↑↓</b> move &nbsp; <b>space</b> done &nbsp; <b>⏎</b> edit &nbsp; <b>⌫</b> delete &nbsp; <b>c</b> category</span>
+  </footer>
+
+  <!-- One popover element, repositioned and refilled by whatever opened it —
+       category pickers and the category editor alike. -->
+  <div id="pop" hidden></div>
+
+  <script src="src/dates.js"></script>
+  <script src="src/renderer.js"></script>
+</body>
+</html>
