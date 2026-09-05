@@ -4,6 +4,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const { isDay, todayYmd } = require('./src/dates');
+const { parseQuantity, have, isDone } = require('./src/quantity');
 
 app.setName('Todo');
 
@@ -18,6 +19,11 @@ let win = null;
 //   { categories: [ { id, name, color, created } ],
 //     items:  { 'YYYY-MM-DD': [ { id, text, done, cat, created } ] },
 //     alerts: { 'YYYY-MM-DD': [ { id, text, created } ] } }
+//
+// An item carries either `done` or `have`, never both: text starting with a
+// small number ("3 chapters") makes it a quantity, counted toward its target
+// instead of ticked off. src/quantity.js owns that rule for both processes, and
+// `isDone` is the only thing that answers the question either way.
 //
 // Items and alerts are separate maps rather than one list with a flag. That is
 // the whole point of an alert: it marks the day without occupying a line in the
@@ -72,11 +78,24 @@ function cleanEntry(raw, kind, catIds) {
   if (!raw || typeof raw !== 'object') return null;
   const text = cleanText(raw.text);
   if (!text) return null;
+  // A quantity's progress is stored and its doneness derived; an ordinary
+  // item's doneness is stored and there is no progress. Writing both would give
+  // "is this finished?" two answers that can disagree.
+  const q = kind === 'items' ? parseQuantity(text) : null;
+
+  // A ticked item that is only now being read as a quantity — every item
+  // written before quantities existed, and any file edited by hand — arrives
+  // complete rather than at zero. Without this, adding the feature silently
+  // un-ticks every finished item whose text happens to start with a number.
+  const progress = q && raw.have === undefined && raw.done === true
+    ? q.target
+    : have(raw, q || { target: 0 });
+
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : crypto.randomUUID().slice(0, 8),
     text,
     ...(kind === 'items' ? {
-      done: raw.done === true,
+      ...(q ? { have: progress } : { done: raw.done === true }),
       cat: catIds && catIds.has(raw.cat) ? raw.cat : null,
     } : {}),
     created: Number(raw.created) || Date.now(),
@@ -281,21 +300,62 @@ ipcMain.handle('remove', (_e, kind, day, id) => {
 });
 
 // Editing text in place, so a typo doesn't cost a delete and a retype.
+// Editing the text re-parses it, so "3 chapters" -> "5 chapters" moves the
+// target and "chapters" drops the quantity entirely. Rebuilding the entry
+// rather than patching `text` is what keeps `have`/`done` consistent with the
+// text that now names it: a count above the new target is clamped, and an item
+// that stops being a quantity keeps whether it was finished.
 ipcMain.handle('edit', (_e, kind, day, id, text) => {
   if (!KINDS.has(kind) || !isDay(day)) return state;
   const entry = (state[kind][day] || []).find(e => e.id === id);
   const clean = cleanText(text);
   if (!entry || !clean) return state;
-  entry.text = clean;
+
+  const wasDone = kind === 'items' ? isDone(entry) : false;
+  const q = kind === 'items' ? parseQuantity(clean) : null;
+  // A finished item that becomes a quantity arrives finished, the mirror of a
+  // finished quantity that becomes an ordinary item. Editing the words should
+  // not quietly un-tick something.
+  const carried = { ...entry, text: clean, done: wasDone };
+  if (q && wasDone) carried.have = q.target;
+
+  const rebuilt = cleanEntry(carried, kind, catIds());
+  if (!rebuilt) return state;
+  Object.assign(entry, rebuilt);
+  // Object.assign can't remove the field the other kind of item doesn't have.
+  if (kind === 'items') delete entry[q ? 'done' : 'have'];
+
   saveState();
   return state;
 });
 
+// Complete / not complete, for either kind of item. On a quantity that means
+// all of it or none of it — the same all-or-nothing the checkbox gives an
+// ordinary item; the stepper is for the values in between.
 ipcMain.handle('toggle', (_e, day, id) => {
   if (!isDay(day)) return state;
   const item = (state.items[day] || []).find(e => e.id === id);
   if (!item) return state;
-  item.done = !item.done;
+
+  const q = parseQuantity(item.text);
+  if (q) item.have = isDone(item) ? 0 : q.target;
+  else item.done = !item.done;
+
+  saveState();
+  return state;
+});
+
+// How many of a quantity item are done. Clamped to its target, so the stepper
+// and a typed digit can't put the item past finished.
+ipcMain.handle('set-quantity', (_e, day, id, n) => {
+  if (!isDay(day)) return state;
+  const item = (state.items[day] || []).find(e => e.id === id);
+  if (!item) return state;
+
+  const q = parseQuantity(item.text);
+  if (!q) return state;
+  item.have = have({ have: n }, q);
+
   saveState();
   return state;
 });
@@ -339,7 +399,7 @@ ipcMain.handle('reorder', (_e, day, ids) => {
 ipcMain.handle('clear-done', (_e, day, cat) => {
   if (!isDay(day) || !state.items[day]) return state;
   const inScope = item => cat === undefined || item.cat === cat;
-  state.items[day] = state.items[day].filter(e => !(e.done && inScope(e)));
+  state.items[day] = state.items[day].filter(e => !(isDone(e) && inScope(e)));
   prune('items', day);
   saveState();
   return state;

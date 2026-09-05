@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('api', {
   editItem: (day, id, text) => ipcRenderer.invoke('edit', 'items', day, id, text),
   removeItem: (day, id) => ipcRenderer.invoke('remove', 'items', day, id),
   toggleItem: (day, id) => ipcRenderer.invoke('toggle', day, id),
+  setQuantity: (day, id, n) => ipcRenderer.invoke('set-quantity', day, id, n),
   moveItem: (day, id, toDay) => ipcRenderer.invoke('move', day, id, toDay),
   reorderItems: (day, ids) => ipcRenderer.invoke('reorder', day, ids),
   clearDone: (day, cat) => ipcRenderer.invoke('clear-done', day, cat),

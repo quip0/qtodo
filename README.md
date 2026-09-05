@@ -4,7 +4,9 @@ A month calendar with a todo list behind every day, opened with `:todo` in
 [qcommand](../qcommand). Pick a day, and the pane on the right is that day's
 list: add items, tick them off, edit or delete them, push one to tomorrow.
 Alerts are the second kind of entry — they mark a day without taking a line in
-its list. Categories are folders for items, and filter the whole app.
+its list. Categories are folders for items, and filter the whole app. An item
+whose text starts with a small number ("3 chapters") is a quantity, counted off
+one at a time instead of ticked once.
 
 Gruvbox-hard chrome, matching Quip IDE, Drive and Habits.
 
@@ -55,6 +57,35 @@ categories are always distinct from each other. Past eight it wraps, which is
 the honest limit of a fixed palette. Alerts have no category: they were never in
 the list to be filed.
 
+## Quantities
+
+Type `3 chapters` and the item tracks a count rather than a checkbox: its box
+becomes `0/3`, and it is done when it reaches three. Nothing else marks it —
+there is no mode to switch on and no second field to fill in, so the text stays
+the one thing you typed, and editing it re-parses:
+
+- `3 chapters` → `5 chapters` moves the target (a count above it is clamped down).
+- `3 chapters` → `chapters` drops the quantity, keeping whether it was finished.
+- `chapters` (ticked) → `3 chapters` arrives at `3/3`, the same rule mirrored.
+  Editing the words never quietly un-ticks something.
+
+Advance it by clicking the row (one more; clicking a finished one starts it
+over), with the row's `−`/`+`, or from the keyboard: `←`/`→` step, a digit sets
+the count outright, and `space` still means all-or-nothing. The count is drawn
+in the box and stripped from the label, since `3 chapters` beside a `1/3` badge
+would say three twice.
+
+**What counts as a quantity:** a leading integer from 2 to 99, whitespace, then
+a non-empty rest. `1 coffee` stays an ordinary item — a `0/1` stepper is worse
+than a checkbox. `100 push-ups` and `2026 review` stay ordinary too: past 99 a
+leading number is nearly always part of the name, and the rare real loss is
+worth not turning every year and page range into a stepper.
+
+A quantity stores `have` and derives its doneness; an ordinary item stores
+`done` and has no count. An item never carries both — two stored answers to "is
+this finished?" could disagree, and `isDone()` in `src/quantity.js` is the only
+thing either process asks.
+
 ## The two kinds of entry
 
 An **item** is a line in the day's list: it has a checkbox, it can be edited,
@@ -85,6 +116,9 @@ guess which of the two you meant. Tab moves between them.
 | `space` | done / not done |
 | `Enter` | edit in place (`Escape` cancels) |
 | `c` | file under a category |
+| `space` | done / not done (all of a quantity, or none) |
+| `←` `→` | one fewer / one more, on a quantity |
+| `0`–`9` | set a quantity's count outright |
 | `⌫` | delete |
 
 `⌘N`, `⇧⌘N` and `⇧⌘C` focus the composer set to item, to alert, and start a new
@@ -98,7 +132,8 @@ One file, `~/Library/Application Support/Todo/todo.json`:
 
 ```json
 { "categories": [ { "id": "f30e24ef", "name": "errands", "color": "#83a598", "created": 1788347201000 } ],
-  "items":  { "2026-09-02": [ { "id": "af6c721c", "text": "renew passport", "done": false, "cat": "f30e24ef", "created": 1788347236854 } ] },
+  "items":  { "2026-09-02": [ { "id": "af6c721c", "text": "renew passport", "done": false, "cat": "f30e24ef", "created": 1788347236854 },
+                              { "id": "b7c10d42", "text": "3 chapters",     "have": 1,     "cat": null,       "created": 1788347240111 } ] },
   "alerts": { "2026-09-02": [ { "id": "44145eda", "text": "flight check-in opens", "created": 1788347254561 } ] } }
 ```
 
@@ -119,6 +154,11 @@ edit costs you the bad entry rather than the file.
   what "today" is; it is loaded two ways (a plain `<script>` and `require()`).
 - **`main.js` checks `kind` against a `Set`** before indexing `state[kind]`.
   An unchecked string from the renderer would otherwise reach `Object.prototype`.
+- **Adding a rule that reinterprets existing text has to carry the old state
+  forward.** Quantities read `4 intros` as a target the day they shipped, and
+  the first cut dropped `done` while writing `have: 0` — every finished item
+  whose text began with a number silently came back unfinished. `cleanEntry()`
+  now starts such an item at its target when the file had it ticked.
 - **`itemsOn()` in the renderer is the only place the category filter is
   applied**, so a new caller can't forget it and quietly show hidden items.
   `clear done` passes the filter to the main process for the same reason: a

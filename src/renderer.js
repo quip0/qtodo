@@ -96,8 +96,9 @@ function drawMonth() {
     const dayItems = itemsOn(day);
     for (const item of dayItems.slice(0, MAX_PEEK)) {
       const peek = document.createElement('span');
-      peek.className = item.done ? 'peek done' : 'peek';
-      peek.textContent = item.text;
+      peek.className = isDone(item) ? 'peek done' : 'peek';
+      const q = parseQuantity(item.text);
+      peek.textContent = q ? `${have(item, q)}/${q.target} ${q.label}` : item.text;
       const cat = catById(item.cat);
       if (cat) peek.style.borderLeftColor = cat.color;
       cell.append(peek);
@@ -423,7 +424,7 @@ function drawDay() {
   $('dayname').textContent = `${WEEKDAYS[weekdayOf(sel)]}, ${prettyDay(sel, today)}`;
 
   const items = itemsOn(sel);
-  const done = items.filter(i => i.done).length;
+  const done = items.filter(isDone).length;
   const cat = catById(filter);
   $('daycount').textContent = items.length
     ? `${done}/${items.length} done${cat ? ` in ${cat.name}` : ''}`
@@ -471,11 +472,18 @@ function drawDay() {
       list.append(h);
     }
 
-    const row = document.createElement('div');
-    row.className = 'item' + (item.done ? ' on' : '') + (i === cursor ? ' sel' : '');
+    const q = parseQuantity(item.text);
+    const n = q ? have(item, q) : 0;
 
+    const row = document.createElement('div');
+    row.className = 'item' + (isDone(item) ? ' on' : '') + (i === cursor ? ' sel' : '')
+      + (q ? ' qty' : '');
+
+    // A quantity's box is its count: the checkbox's job (say whether this is
+    // finished) plus how far along it is, in the space the checkbox had.
     const box = document.createElement('span');
     box.className = 'box';
+    if (q) box.textContent = `${n}/${q.target}`;
 
     const itemCat = catById(item.cat);
     const dot = document.createElement('button');
@@ -486,9 +494,20 @@ function drawDay() {
 
     const txt = document.createElement('span');
     txt.className = 'txt';
-    txt.textContent = item.text;
+    // The count is drawn in the box, so the label drops it — "3 chapters" with
+    // a 1/3 badge beside it would say three twice.
+    txt.textContent = q ? q.label : item.text;
 
-    row.append(box, dot, txt, actions([
+    // The stepper is what "how many are done" is entered with; it replaces the
+    // move-to-tomorrow button on a quantity row rather than crowding beside it,
+    // and that stays reachable from the keyboard and the row menu.
+    const step = d => api.setQuantity(sel, item.id, n + d).then(apply);
+    row.append(box, dot, txt, actions(q ? [
+      ['−', `One fewer done (${n} of ${q.target})`, () => step(-1)],
+      ['+', `One more done (${n} of ${q.target})`, () => step(1)],
+      ['✎', 'Edit this item', () => editRow(row, 'items', item.id, item.text)],
+      ['✕', 'Delete this item', () => api.removeItem(sel, item.id).then(apply), 'x'],
+    ] : [
       ['→', 'Move to the next day', () => api.moveItem(sel, item.id, addDays(sel, 1)).then(apply)],
       ['✎', 'Edit this item', () => editRow(row, 'items', item.id, item.text)],
       ['✕', 'Delete this item', () => api.removeItem(sel, item.id).then(apply), 'x'],
@@ -496,7 +515,15 @@ function drawDay() {
 
     // Clicking the row is the toggle — the checkbox is a target, not the only
     // one. Editing is the double-click, so the two can't be confused.
-    row.addEventListener('click', () => { cursor = i; api.toggleItem(sel, item.id).then(apply); });
+    //
+    // On a quantity, a click is one more done, and a click on a finished one
+    // starts it over: the same "click to advance, click again to undo" the
+    // checkbox has, spread over more than two states.
+    row.addEventListener('click', () => {
+      cursor = i;
+      if (q) step(isDone(item) ? -n : 1);
+      else api.toggleItem(sel, item.id).then(apply);
+    });
     row.addEventListener('dblclick', () => { cursor = i; editRow(row, 'items', item.id, item.text); });
 
     list.append(row);
@@ -507,7 +534,7 @@ function drawDay() {
   $('selinfo').textContent = `${MONTHS[view.m]}${cat ? ` · ${cat.name}` : ''}: `
     + `${count(monthItems, 'item')}, ${count(monthAlerts, 'alert')}`;
 
-  $('headline').textContent = `${count(itemsOn(today).filter(i => !i.done).length, 'item')} left today`;
+  $('headline').textContent = `${count(itemsOn(today).filter(i => !isDone(i)).length, 'item')} left today`;
 }
 
 // The composer's category button, redrawn on its own so picking a category
@@ -654,7 +681,19 @@ list.addEventListener('keydown', e => {
   if (cursor === -1) return;
   const item = rows[cursor].item;
 
+  const q = parseQuantity(item.text);
+
   if (e.key === ' ') { e.preventDefault(); api.toggleItem(sel, item.id).then(apply); }
+  else if (q && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+    e.preventDefault();
+    api.setQuantity(sel, item.id, have(item, q) + (e.key === 'ArrowRight' ? 1 : -1)).then(apply);
+  } else if (q && /^[0-9]$/.test(e.key)) {
+    // Typing the number is the direct way to say how many are done. One digit
+    // only: targets stop at 99, and a two-digit entry would need a commit key
+    // and a timeout to tell "1" from the start of "12".
+    e.preventDefault();
+    api.setQuantity(sel, item.id, Number(e.key)).then(apply);
+  }
   else if (e.key === 'Backspace' || e.key === 'Delete') {
     e.preventDefault();
     api.removeItem(sel, item.id).then(apply);
